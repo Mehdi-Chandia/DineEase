@@ -7,6 +7,7 @@ on:
 
 
 jobs:
+# get the backend code 
   check-backend:
     runs-on: ubuntu-latest
     steps:
@@ -22,7 +23,7 @@ jobs:
         working-directory: ./backend                  
         run: npm install
 
-
+# get the frontend code and build it 
   check-frontend:
     runs-on: ubuntu-latest
     steps:
@@ -42,7 +43,7 @@ jobs:
         working-directory: ./frontend
         run: npm run build
 
-
+# login to docker build images and push them to docker hub
   docker:
     runs-on: ubuntu-latest
     needs: [check-backend, check-frontend]
@@ -65,3 +66,28 @@ jobs:
         run: |
             docker build -t ${{secrets.DOCKER_USERNAME}}/dineease-frontend:latest ./frontend
             docker push ${{secrets.DOCKER_USERNAME}}/dineease-frontend:latest
+
+# pull the images and run containers on EC2 instance
+  deploy:
+    runs-on: ubuntu-latest
+    needs: docker
+    steps:
+      - name: deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          hostname: ${{secrets.EC2_HOSTNAME}}          
+          username: ${{secrets.EC2_USERNAME}}          
+          key: ${{secrets.EC2_SECRET}}
+          script: |
+               docker pull ${{secrets.DOCKER_USERNAME}}/dineease-backend:latest
+               docker pull ${{secrets.DOCKER_USERNAME}}/dineease-frontend:latest
+
+               docker stop dineease-backend || true
+               docker stop dineease-frontend || true
+
+               docker rm dineease-backend 
+               docker rm dineease-frontend
+
+               docker run -d -p 4001:4001 --env-file /home/ec2-user/.env --name dineease-backend ${{secrets.DOCKER_USERNAME}}/dineease-backend:latest
+               docker run -d -p 80:80 --name dineease-frontend ${{secrets.DOCKER_USERNAME}}/dineease-frontend:latest
+                    
